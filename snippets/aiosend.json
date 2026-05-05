@@ -1,0 +1,170 @@
+{
+  "aiosend: Import CryptoPay": {
+    "prefix": "aiosend",
+    "body": ["from aiosend import CryptoPay", ""],
+    "description": "Import CryptoPay from aiosend"
+  },
+  "aiosend: Basic setup": {
+    "prefix": "aiosend-setup",
+    "body": [
+      "import asyncio",
+      "import os",
+      "from aiosend import CryptoPay",
+      "",
+      "",
+      "async def main() -> None:",
+      "    cp = CryptoPay(token=os.environ['CRYPTOPAY_TOKEN'])",
+      "    app = await cp.get_me()",
+      "    print(f'Connected to: {app.name}')",
+      "",
+      "",
+      "asyncio.run(main())"
+    ],
+    "description": "aiosend basic setup with CryptoPay"
+  },
+  "aiosend: Create invoice": {
+    "prefix": "aiosend-invoice",
+    "body": [
+      "invoice = await ${1:cp}.create_invoice(",
+      "\tamount=${2:100},",
+      "\tasset=\"${3|USDT,TON,BTC,ETH,LTC,BNB,TRX,USDC|}\",",
+      "\tdescription=\"${4:Payment description}\"",
+      ")",
+      "print(invoice.pay_url)"
+    ],
+    "description": "Create aiosend payment invoice"
+  },
+  "aiosend: Create invoice with expiry": {
+    "prefix": "aiosend-invoice-ex",
+    "body": [
+      "invoice = await ${1:cp}.create_invoice(",
+      "\tamount=${2:100},",
+      "\tasset=\"${3|USDT,TON,BTC,ETH,LTC,BNB,TRX,USDC|}\",",
+      "\tdescription=\"${4:Payment description}\",",
+      "\texpires_in=${5:3600},",
+      "\tpayload=\"${6:custom-data}\"",
+      ")",
+      "print(invoice.pay_url)"
+    ],
+    "description": "Create aiosend invoice with expiry and payload"
+  },
+  "aiosend: Create check": {
+    "prefix": "aiosend-check",
+    "body": [
+      "check = await ${1:cp}.create_check(",
+      "\tasset=\"${2|USDT,TON,BTC,ETH,LTC,BNB,TRX,USDC|}\",",
+      "\tamount=${3:100}",
+      ")",
+      "print(check.bot_check_url)"
+    ],
+    "description": "Create aiosend crypto check"
+  },
+  "aiosend: Transfer": {
+    "prefix": "aiosend-transfer",
+    "body": [
+      "transfer = await ${1:cp}.transfer(",
+      "\tuser_id=${2:user_id},",
+      "\tasset=\"${3|USDT,TON,BTC,ETH,LTC,BNB,TRX,USDC|}\",",
+      "\tamount=${4:100},",
+      "\tspend_id=\"${5:unique-spend-id}\"",
+      ")",
+      "print(transfer.transfer_id)"
+    ],
+    "description": "aiosend transfer crypto to Telegram user"
+  },
+  "aiosend: Get balance": {
+    "prefix": "aiosend-balance",
+    "body": [
+      "balances = await ${1:cp}.get_balance()",
+      "for b in balances:",
+      "\tprint(f'{b.crypto_code}: {b.available}')"
+    ],
+    "description": "Get aiosend app balance"
+  },
+  "aiosend: Polling handler": {
+    "prefix": "aiosend-poll",
+    "body": [
+      "import asyncio",
+      "import os",
+      "from aiosend import CryptoPay",
+      "",
+      "",
+      "cp = CryptoPay(token=os.environ['CRYPTOPAY_TOKEN'])",
+      "",
+      "",
+      "@cp.polling()",
+      "async def on_invoice_paid(invoice) -> None:",
+      "    print(f'Paid! Invoice #{invoice.invoice_id}, amount={invoice.paid_amount}')",
+      "",
+      "",
+      "asyncio.run(cp.start_polling())"
+    ],
+    "description": "aiosend polling setup for invoice_paid event"
+  },
+  "aiosend: Webhook (aiohttp)": {
+    "prefix": "aiosend-webhook",
+    "body": [
+      "import os",
+      "from aiohttp import web",
+      "from aiosend import CryptoPay",
+      "",
+      "",
+      "cp = CryptoPay(token=os.environ['CRYPTOPAY_TOKEN'])",
+      "",
+      "",
+      "@cp.webhook()",
+      "async def on_invoice_paid(invoice) -> None:",
+      "    print(f'Paid! #{invoice.invoice_id}')",
+      "",
+      "",
+      "app = web.Application()",
+      "cp.setup_webhook(app, path='/webhook')",
+      "",
+      "if __name__ == '__main__':",
+      "    web.run_app(app, host='0.0.0.0', port=8080)"
+    ],
+    "description": "aiosend webhook setup with aiohttp"
+  },
+  "aiosend: Error handling": {
+    "prefix": "aiosend-try",
+    "body": [
+      "from aiosend.exceptions import CryptoPayError",
+      "",
+      "try:",
+      "\t${1:result} = await ${2:cp}.${3:create_invoice}(${4})",
+      "except CryptoPayError as e:",
+      "\tprint(f'API error: {e}')"
+    ],
+    "description": "aiosend API call with error handling"
+  },
+  "aiosend: Full bot example (aiogram)": {
+    "prefix": "aiosend-aiogram",
+    "body": [
+      "import asyncio",
+      "import os",
+      "from aiogram import Bot, Dispatcher",
+      "from aiogram.filters import Command",
+      "from aiogram.types import Message",
+      "from aiosend import CryptoPay",
+      "",
+      "",
+      "bot = Bot(token=os.environ['BOT_TOKEN'])",
+      "dp  = Dispatcher()",
+      "cp  = CryptoPay(token=os.environ['CRYPTOPAY_TOKEN'])",
+      "",
+      "",
+      "@dp.message(Command('pay'))",
+      "async def cmd_pay(message: Message) -> None:",
+      "    invoice = await cp.create_invoice(",
+      "        amount=${1:100},",
+      "        asset=\"${2|USDT,TON,BTC,ETH,LTC,BNB,TRX,USDC|}\",",
+      "        description=\"${3:Payment}\"",
+      "    )",
+      "    await message.answer(f'Pay here: {invoice.pay_url}')",
+      "",
+      "",
+      "asyncio.run(dp.start_polling(bot))"
+    ],
+    "description": "Full aiosend + aiogram bot example"
+  }
+}
