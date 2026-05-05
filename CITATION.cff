@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "aiosend Extension"
+abstract: "VS Code extension for aiosend — API Explorer, strict diagnostics, hover docs, and smart completions for the Crypto Pay API client."
+authors:
+  - family-names: "NEFOR"
+    given-names: "White"
+    alias: "ndugram"
+    email: "yap8572@gmail.com"
+repository-code: "https://github.com/aiosend/aiosend-vscode"
+url: "https://aiosend.readthedocs.io/ru/stable/"
+license: MIT
+version: "0.0.1"
+date-released: "2026-05-05"
+keywords:
+  - vscode
+  - extension
+  - aiosend
+  - python
+  - crypto
+  - cryptopay
+  - telegram
+  - payment
+  - async
