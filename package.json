@@ -1,0 +1,139 @@
+{
+  "name": "aiosend-vscode",
+  "displayName": "aiosend",
+  "description": "VS Code extension for aiosend — async Crypto Pay API client. API Explorer, strict diagnostics, hover docs, and smart completions.",
+  "version": "0.0.1",
+  "publisher": "aiosend",
+  "icon": "media/logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiosend/aiosend-vscode"
+  },
+  "homepage": "https://github.com/aiosend/aiosend-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/aiosend/aiosend-vscode/issues"
+  },
+  "keywords": [
+    "aiosend",
+    "python",
+    "crypto",
+    "telegram",
+    "cryptopay",
+    "async",
+    "payment",
+    "bot",
+    "invoice",
+    "ton"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Snippets",
+    "Linters"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiosend-explorer",
+          "title": "aiosend",
+          "icon": "media/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiosend-explorer": [
+        {
+          "id": "aiosendApi",
+          "name": "API"
+        },
+        {
+          "id": "aiosendWorkspace",
+          "name": "Workspace"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiosend.refreshApi",
+        "title": "aiosend: Refresh API",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aiosend.refreshWorkspace",
+        "title": "aiosend: Refresh Workspace",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aiosend.openDocs",
+        "title": "aiosend: Open Documentation",
+        "icon": "$(book)"
+      },
+      {
+        "command": "aiosend.insertSnippet",
+        "title": "aiosend: Insert Snippet",
+        "icon": "$(insert)"
+      },
+      {
+        "command": "aiosend.copyMethodSignature",
+        "title": "aiosend: Copy Signature",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "aiosend.goToCall",
+        "title": "aiosend: Go to Call"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aiosend.refreshApi",
+          "when": "view == aiosendApi",
+          "group": "navigation"
+        },
+        {
+          "command": "aiosend.openDocs",
+          "when": "view == aiosendApi",
+          "group": "navigation"
+        },
+        {
+          "command": "aiosend.refreshWorkspace",
+          "when": "view == aiosendWorkspace",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "aiosend.insertSnippet",
+          "when": "view == aiosendApi && viewItem == method",
+          "group": "inline"
+        },
+        {
+          "command": "aiosend.copyMethodSignature",
+          "when": "view == aiosendApi && viewItem == method",
+          "group": "inline"
+        }
+      ]
+    },
+    "snippets": [
+      {
+        "language": "python",
+        "path": "./snippets/aiosend.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
