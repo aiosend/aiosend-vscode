@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/logo.png" style="border-radius:20px; width:100px">
+  <img src="https://aiosend.readthedocs.io/ru/stable/_static/logo.png" style="border-radius:20px; width:100px">
 </p>
 
 <h1 align="center">aiosend</h1>
