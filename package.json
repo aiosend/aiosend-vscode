@@ -2,7 +2,7 @@
   "name": "aiosend-vscode",
   "displayName": "aiosend",
   "description": "VS Code extension for aiosend — async Crypto Pay API client. API Explorer, strict diagnostics, hover docs, and smart completions.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "aiosend",
   "icon": "media/logo.png",
   "repository": {
