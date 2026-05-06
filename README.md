@@ -35,7 +35,7 @@ A second sidebar tab scans your entire project for aiosend API calls and lists t
 
 ### Strict Diagnostics
 
-8 inline checks — stricter than a basic linter:
+12 inline checks — stricter than a basic linter:
 
 | Problem | Severity |
 |:--|:--:|
@@ -44,8 +44,13 @@ A second sidebar tab scans your entire project for aiosend API calls and lists t
 | Hardcoded API token in `CryptoPay()` | ⚠️ Warning |
 | Invalid `asset=` value (e.g. `"DOGE"`) | ⚠️ Warning |
 | Invalid `fiat=` value | ⚠️ Warning |
+| Invalid `status=` value (e.g. `"canceled"`) | ⚠️ Warning |
 | Missing `-> ReturnType` annotation | ⚠️ Warning |
 | `amount="100"` — string instead of number | ⚠️ Warning |
+| `invoice_id="123"` — string instead of int | ⚠️ Warning |
+| `transfer()` without `spend_id=` | ⚠️ Warning |
+| `create_invoice()` without `amount=` | ⚠️ Warning |
+| `create_invoice()` without `asset=` | ⚠️ Warning |
 | Duplicate `spend_id` in same file | ⚠️ Warning |
 
 ### Quick Fixes

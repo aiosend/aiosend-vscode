@@ -1,20 +1,25 @@
 import * as vscode from "vscode";
 
-export const DIAG_MISSING_AWAIT   = "aiosend.missing-await";
-export const DIAG_MISSING_ASYNC   = "aiosend.missing-async";
-export const DIAG_HARDCODED_TOKEN = "aiosend.hardcoded-token";
-export const DIAG_INVALID_ASSET   = "aiosend.invalid-asset";
-export const DIAG_INVALID_FIAT    = "aiosend.invalid-fiat";
-export const DIAG_MISSING_RETURN  = "aiosend.missing-return";
-export const DIAG_STRING_AMOUNT   = "aiosend.string-amount";
-export const DIAG_DUPLICATE_SPEND = "aiosend.duplicate-spend-id";
+export const DIAG_MISSING_AWAIT          = "aiosend.missing-await";
+export const DIAG_MISSING_ASYNC          = "aiosend.missing-async";
+export const DIAG_HARDCODED_TOKEN        = "aiosend.hardcoded-token";
+export const DIAG_INVALID_ASSET          = "aiosend.invalid-asset";
+export const DIAG_INVALID_FIAT           = "aiosend.invalid-fiat";
+export const DIAG_MISSING_RETURN         = "aiosend.missing-return";
+export const DIAG_STRING_AMOUNT          = "aiosend.string-amount";
+export const DIAG_DUPLICATE_SPEND        = "aiosend.duplicate-spend-id";
+export const DIAG_INVALID_STATUS         = "aiosend.invalid-status";
+export const DIAG_MISSING_SPEND_ID       = "aiosend.missing-spend-id";
+export const DIAG_MISSING_REQUIRED_PARAM = "aiosend.missing-required-param";
+export const DIAG_STRING_ID              = "aiosend.string-id";
 
-const VALID_ASSETS = new Set(["USDT", "TON", "BTC", "ETH", "LTC", "BNB", "TRX", "USDC", "JET"]);
-const VALID_FIATS  = new Set([
+const VALID_ASSETS    = new Set(["USDT", "TON", "BTC", "ETH", "LTC", "BNB", "TRX", "USDC", "JET"]);
+const VALID_FIATS     = new Set([
     "AED", "AMD", "AZN", "BRL", "BYN", "CNY", "EUR", "GBP", "GEL",
     "IDR", "ILS", "INR", "KGS", "KZT", "PLN", "RUB", "THB", "TJS",
     "TRY", "UAH", "USD", "UZS",
 ]);
+const VALID_STATUSES  = new Set(["active", "paid", "expired", "activated"]);
 
 const ASYNC_METHODS = new Set([
     "get_me", "create_invoice", "delete_invoice", "get_invoices", "get_invoice",
@@ -24,14 +29,37 @@ const ASYNC_METHODS = new Set([
     "get_currencies", "get_stats",
 ]);
 
-const INSTANCE_RE = /(\w+)\s*=\s*CryptoPay\s*\(/;
+const INSTANCE_RE    = /(\w+)\s*=\s*CryptoPay\s*\(/;
 const TOKEN_STRING_RE = /CryptoPay\s*\(\s*["']([^"']{8,})["']/;
 const TOKEN_KWARG_RE  = /CryptoPay\s*\(.*?token\s*=\s*["']([^"']{8,})["']/;
 const ASSET_RE        = /\basset\s*=\s*["']([A-Z]+)["']/g;
 const FIAT_RE         = /\bfiat\s*=\s*["']([A-Z]+)["']/g;
+const STATUS_RE       = /\bstatus\s*=\s*["']([^"']+)["']/g;
 const AMOUNT_STR_RE   = /\bamount\s*=\s*["'][0-9]+(?:\.[0-9]+)?["']/;
 const SPEND_ID_RE     = /spend_id\s*=\s*["']([^"']+)["']/;
+const STRING_ID_RE    = /\b(invoice_id|check_id|transfer_id)\s*=\s*["'](\d+)["']/g;
 const FUNC_DEF_RE     = /^\s*(async\s+)?def\s+\w+\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/;
+
+function extractCallArgsText(lines: string[], startLine: number, openParenCol: number): string {
+    let depth = 0;
+    let result = "";
+    for (let i = startLine; i < Math.min(startLine + 20, lines.length); i++) {
+        const from = i === startLine ? openParenCol : 0;
+        for (let j = from; j < lines[i].length; j++) {
+            const ch = lines[i][j];
+            if (ch === "(") {
+                depth++;
+                if (depth === 1) { continue; }
+            } else if (ch === ")") {
+                depth--;
+                if (depth === 0) { return result; }
+            }
+            if (depth > 0) { result += ch; }
+        }
+        if (depth > 0) { result += " "; }
+    }
+    return result;
+}
 
 function findInstances(lines: string[]): Set<string> {
     const names = new Set<string>();
@@ -61,24 +89,6 @@ function isPlaceholderToken(token: string): boolean {
     ];
     const lower = token.toLowerCase();
     return placeholders.some((p) => lower.includes(p));
-}
-
-function parseFuncAt(lines: string[], startLine: number): {
-    lineIndex: number;
-    isAsync: boolean;
-    returnType: string | null;
-} | null {
-    for (let i = startLine; i < Math.min(startLine + 8, lines.length); i++) {
-        const m = FUNC_DEF_RE.exec(lines[i]);
-        if (m) {
-            return {
-                lineIndex: i,
-                isAsync: Boolean(m[1]),
-                returnType: m[3]?.trim() ?? null,
-            };
-        }
-    }
-    return null;
 }
 
 export class AiosendDiagnosticsProvider {
@@ -142,11 +152,11 @@ export class AiosendDiagnosticsProvider {
 
         const callRE = buildCallRE(instances);
 
-        // ─── Missing await + string amount + invalid asset/fiat ───────────
+        // ─── Per-line checks ───────────────────────────────────────────────
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
 
-            // Missing await on async API call
+            // Missing await + required param checks per API call
             callRE.lastIndex = 0;
             let m: RegExpExecArray | null;
             while ((m = callRE.exec(line)) !== null) {
@@ -162,6 +172,46 @@ export class AiosendDiagnosticsProvider {
                     d.source = "aiosend";
                     diagnostics.push(d);
                 }
+
+                const openParenCol = m.index + m[0].length - 1;
+                const argsText = extractCallArgsText(lines, i, openParenCol);
+
+                if (m[2] === "transfer" && !argsText.includes("**") && !/\bspend_id\s*=/.test(argsText)) {
+                    const range = new vscode.Range(i, m.index, i, m.index + m[0].length - 1);
+                    const d = new vscode.Diagnostic(
+                        range,
+                        "`transfer()` requires `spend_id=` — must be unique per transfer.",
+                        vscode.DiagnosticSeverity.Warning
+                    );
+                    d.code = DIAG_MISSING_SPEND_ID;
+                    d.source = "aiosend";
+                    diagnostics.push(d);
+                }
+
+                if (m[2] === "create_invoice" && !argsText.includes("**")) {
+                    if (!/\bamount\s*=/.test(argsText)) {
+                        const range = new vscode.Range(i, m.index, i, m.index + m[0].length - 1);
+                        const d = new vscode.Diagnostic(
+                            range,
+                            "`create_invoice()` missing required `amount=` parameter.",
+                            vscode.DiagnosticSeverity.Warning
+                        );
+                        d.code = DIAG_MISSING_REQUIRED_PARAM;
+                        d.source = "aiosend";
+                        diagnostics.push(d);
+                    }
+                    if (!/\basset\s*=/.test(argsText)) {
+                        const range = new vscode.Range(i, m.index, i, m.index + m[0].length - 1);
+                        const d = new vscode.Diagnostic(
+                            range,
+                            "`create_invoice()` missing required `asset=` parameter.",
+                            vscode.DiagnosticSeverity.Warning
+                        );
+                        d.code = DIAG_MISSING_REQUIRED_PARAM;
+                        d.source = "aiosend";
+                        diagnostics.push(d);
+                    }
+                }
             }
 
             // amount="100" — string instead of number
@@ -174,6 +224,23 @@ export class AiosendDiagnosticsProvider {
                     vscode.DiagnosticSeverity.Warning
                 );
                 d.code = DIAG_STRING_AMOUNT;
+                d.source = "aiosend";
+                diagnostics.push(d);
+            }
+
+            // invoice_id/check_id/transfer_id as string
+            STRING_ID_RE.lastIndex = 0;
+            let sim: RegExpExecArray | null;
+            while ((sim = STRING_ID_RE.exec(line)) !== null) {
+                const quote = line[sim.index + sim[0].indexOf(sim[2]) - 1] ?? '"';
+                const valStart = line.indexOf(`${quote}${sim[2]}${quote}`, sim.index);
+                const range = new vscode.Range(i, valStart, i, valStart + sim[2].length + 2);
+                const d = new vscode.Diagnostic(
+                    range,
+                    `\`${sim[1]}\` must be an int, not a string.`,
+                    vscode.DiagnosticSeverity.Warning
+                );
+                d.code = DIAG_STRING_ID;
                 d.source = "aiosend";
                 diagnostics.push(d);
             }
@@ -217,17 +284,33 @@ export class AiosendDiagnosticsProvider {
                     diagnostics.push(d);
                 }
             }
+
+            STATUS_RE.lastIndex = 0;
+            let stm: RegExpExecArray | null;
+            while ((stm = STATUS_RE.exec(line)) !== null) {
+                if (!VALID_STATUSES.has(stm[1])) {
+                    const valIdx = line.indexOf(`"${stm[1]}"`, stm.index) !== -1
+                        ? line.indexOf(`"${stm[1]}"`, stm.index) + 1
+                        : line.indexOf(`'${stm[1]}'`, stm.index) + 1;
+                    const range = new vscode.Range(i, valIdx, i, valIdx + stm[1].length);
+                    const d = new vscode.Diagnostic(
+                        range,
+                        `Unknown status "${stm[1]}". Valid: active, paid, expired, activated.`,
+                        vscode.DiagnosticSeverity.Warning
+                    );
+                    d.code = DIAG_INVALID_STATUS;
+                    d.source = "aiosend";
+                    diagnostics.push(d);
+                }
+            }
         }
 
-        // ─── Missing async def + missing return type ───────────────────────
-        // Any function in an aiosend file that calls await should be async
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             callRE.lastIndex = 0;
             if (!callRE.test(line)) {
                 continue;
             }
-            // Look backwards for the enclosing def
             for (let j = i; j >= Math.max(0, i - 30); j--) {
                 const sig = FUNC_DEF_RE.exec(lines[j]);
                 if (!sig) {

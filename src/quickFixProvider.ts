@@ -7,14 +7,17 @@ import {
     DIAG_INVALID_FIAT,
     DIAG_MISSING_RETURN,
     DIAG_STRING_AMOUNT,
+    DIAG_INVALID_STATUS,
+    DIAG_STRING_ID,
 } from "./diagnosticsProvider";
 
-const VALID_ASSETS = ["USDT", "TON", "BTC", "ETH", "LTC", "BNB", "TRX", "USDC", "JET"];
-const VALID_FIATS  = [
+const VALID_ASSETS    = ["USDT", "TON", "BTC", "ETH", "LTC", "BNB", "TRX", "USDC", "JET"];
+const VALID_FIATS     = [
     "USD", "EUR", "RUB", "UAH", "AED", "AMD", "AZN", "BRL", "BYN",
     "CNY", "GBP", "GEL", "IDR", "ILS", "INR", "KGS", "KZT", "PLN",
     "THB", "TJS", "TRY", "UZS",
 ];
+const VALID_STATUSES  = ["active", "paid", "expired", "activated"];
 
 export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
     static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix];
@@ -47,11 +50,17 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
                 case DIAG_INVALID_FIAT:
                     actions.push(...this.fixInvalidEnum(document, diag, VALID_FIATS, "fiat"));
                     break;
+                case DIAG_INVALID_STATUS:
+                    actions.push(...this.fixInvalidEnum(document, diag, VALID_STATUSES, "status"));
+                    break;
                 case DIAG_MISSING_RETURN:
                     actions.push(this.fixMissingReturn(document, diag));
                     break;
                 case DIAG_STRING_AMOUNT:
                     actions.push(this.fixStringAmount(document, diag));
+                    break;
+                case DIAG_STRING_ID:
+                    actions.push(this.fixStringId(document, diag));
                     break;
             }
         }
@@ -68,7 +77,6 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
         action.isPreferred = true;
 
         const lineNum = diag.range.start.line;
-        const text    = document.lineAt(lineNum).text;
         const col     = diag.range.start.character;
 
         const edit = new vscode.WorkspaceEdit();
@@ -107,12 +115,10 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
         action.isPreferred = true;
 
         const lineNum    = diag.range.start.line;
-        const text       = document.lineAt(lineNum).text;
         const tokenStart = diag.range.start.character;
         const tokenEnd   = diag.range.end.character;
 
-        const quote = text[tokenStart - 1] ?? '"';
-        const edit  = new vscode.WorkspaceEdit();
+        const edit = new vscode.WorkspaceEdit();
         edit.replace(
             document.uri,
             new vscode.Range(lineNum, tokenStart - 1, lineNum, tokenEnd + 1),
@@ -126,7 +132,7 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
         document: vscode.TextDocument,
         diag: vscode.Diagnostic,
         validValues: string[],
-        paramName: string
+        _paramName: string
     ): vscode.CodeAction[] {
         const lineNum = diag.range.start.line;
         const text    = document.lineAt(lineNum).text;
@@ -165,9 +171,9 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
         action.diagnostics = [diag];
         action.isPreferred = true;
 
-        const lineNum     = diag.range.start.line;
-        const text        = document.lineAt(lineNum).text;
-        const closingIdx  = text.lastIndexOf(")");
+        const lineNum    = diag.range.start.line;
+        const text       = document.lineAt(lineNum).text;
+        const closingIdx = text.lastIndexOf(")");
 
         if (closingIdx !== -1) {
             const colonIdx = text.indexOf(":", closingIdx);
@@ -197,13 +203,42 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
         const match   = /\bamount\s*=\s*(["'])([0-9]+(?:\.[0-9]+)?)\1/.exec(text);
 
         if (match) {
-            const quoteStart = text.indexOf(match[0]);
-            const valueStart = quoteStart + match[0].indexOf(match[1]) + 1;
-            const fullRange  = new vscode.Range(
+            const fullRange = new vscode.Range(
                 lineNum,
                 text.indexOf(match[0]) + match[0].indexOf(match[1]),
                 lineNum,
                 text.indexOf(match[0]) + match[0].length
+            );
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(document.uri, fullRange, match[2]);
+            action.edit = edit;
+        }
+
+        return action;
+    }
+
+    private fixStringId(
+        document: vscode.TextDocument,
+        diag: vscode.Diagnostic
+    ): vscode.CodeAction {
+        const action = new vscode.CodeAction(
+            "Remove quotes from ID (use int)",
+            vscode.CodeActionKind.QuickFix
+        );
+        action.diagnostics = [diag];
+        action.isPreferred = true;
+
+        const lineNum = diag.range.start.line;
+        const text    = document.lineAt(lineNum).text;
+        const match   = /\b(?:invoice_id|check_id|transfer_id)\s*=\s*(["'])(\d+)\1/.exec(text);
+
+        if (match) {
+            const quoteStart = text.indexOf(match[0]) + match[0].indexOf(match[1]);
+            const fullRange  = new vscode.Range(
+                lineNum,
+                quoteStart,
+                lineNum,
+                quoteStart + match[1].length + match[2].length + match[1].length
             );
             const edit = new vscode.WorkspaceEdit();
             edit.replace(document.uri, fullRange, match[2]);
