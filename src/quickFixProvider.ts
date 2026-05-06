@@ -1,8 +1,6 @@
 import * as vscode from "vscode";
 import {
     DIAG_MISSING_AWAIT,
-    DIAG_MISSING_ASYNC,
-    DIAG_HARDCODED_TOKEN,
     DIAG_INVALID_ASSET,
     DIAG_INVALID_FIAT,
     DIAG_MISSING_RETURN,
@@ -37,12 +35,6 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
             switch (diag.code) {
                 case DIAG_MISSING_AWAIT:
                     actions.push(this.fixMissingAwait(document, diag));
-                    break;
-                case DIAG_MISSING_ASYNC:
-                    actions.push(this.fixMissingAsync(document, diag));
-                    break;
-                case DIAG_HARDCODED_TOKEN:
-                    actions.push(this.fixHardcodedToken(document, diag));
                     break;
                 case DIAG_INVALID_ASSET:
                     actions.push(...this.fixInvalidEnum(document, diag, VALID_ASSETS, "asset"));
@@ -81,49 +73,6 @@ export class AiosendQuickFixProvider implements vscode.CodeActionProvider {
 
         const edit = new vscode.WorkspaceEdit();
         edit.insert(document.uri, new vscode.Position(lineNum, col), "await ");
-        action.edit = edit;
-        return action;
-    }
-
-    private fixMissingAsync(
-        document: vscode.TextDocument,
-        diag: vscode.Diagnostic
-    ): vscode.CodeAction {
-        const action = new vscode.CodeAction("Add `async`", vscode.CodeActionKind.QuickFix);
-        action.diagnostics = [diag];
-        action.isPreferred = true;
-
-        const lineNum = diag.range.start.line;
-        const text    = document.lineAt(lineNum).text;
-        const defIdx  = text.indexOf("def ");
-
-        const edit = new vscode.WorkspaceEdit();
-        edit.insert(document.uri, new vscode.Position(lineNum, defIdx), "async ");
-        action.edit = edit;
-        return action;
-    }
-
-    private fixHardcodedToken(
-        document: vscode.TextDocument,
-        diag: vscode.Diagnostic
-    ): vscode.CodeAction {
-        const action = new vscode.CodeAction(
-            "Replace with os.environ.get('CRYPTOPAY_TOKEN')",
-            vscode.CodeActionKind.QuickFix
-        );
-        action.diagnostics = [diag];
-        action.isPreferred = true;
-
-        const lineNum    = diag.range.start.line;
-        const tokenStart = diag.range.start.character;
-        const tokenEnd   = diag.range.end.character;
-
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(
-            document.uri,
-            new vscode.Range(lineNum, tokenStart - 1, lineNum, tokenEnd + 1),
-            "os.environ.get('CRYPTOPAY_TOKEN', '')"
-        );
         action.edit = edit;
         return action;
     }
