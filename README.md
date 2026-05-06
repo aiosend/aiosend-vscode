@@ -35,15 +35,13 @@ A second sidebar tab scans your entire project for aiosend API calls and lists t
 
 ### Strict Diagnostics
 
-12 inline checks — stricter than a basic linter:
+11 inline checks — stricter than a basic linter:
 
 | Problem | Severity |
 |:--|:--:|
 | `cp.method()` without `await` | ❌ Error |
-| `def` instead of `async def` | ❌ Error |
-| Hardcoded API token in `CryptoPay()` | ⚠️ Warning |
 | Invalid `asset=` value (e.g. `"DOGE"`) | ⚠️ Warning |
-| Invalid `fiat=` value | ⚠️ Warning |
+| Invalid `fiat=` value (e.g. `"GBR"`) | ⚠️ Warning |
 | Invalid `status=` value (e.g. `"canceled"`) | ⚠️ Warning |
 | Missing `-> ReturnType` annotation | ⚠️ Warning |
 | `amount="100"` — string instead of number | ⚠️ Warning |
@@ -55,14 +53,12 @@ A second sidebar tab scans your entire project for aiosend API calls and lists t
 
 ### Quick Fixes
 
-Every diagnostic has a one-click fix (`Ctrl+.` / `Cmd+.`):
+Most diagnostics have a one-click fix (`Ctrl+.` / `Cmd+.`):
 
 - Insert missing `await`
-- Add `async` to `def`
-- Replace hardcoded token with `os.environ.get('CRYPTOPAY_TOKEN', '')`
-- Auto-correct invalid asset or fiat (Levenshtein nearest match)
+- Auto-correct invalid `asset=`, `fiat=`, or `status=` (Levenshtein nearest match)
 - Add `-> None` return type
-- Unquote string `amount`
+- Unquote string `amount` or ID value
 
 ### Hover Documentation
 
@@ -71,6 +67,13 @@ Hover over any API call to see the full signature, parameter table, return type,
 ```python
 invoice = await cp.create_invoice(amount=100, asset="USDT")
 #                  ^─ hover here
+```
+
+Hover over the token in `CryptoPay(token="...")` to instantly verify it — the extension calls the Crypto Pay API and shows the app name, ID, and bot username.
+
+```python
+cp = CryptoPay(token="YOUR_TOKEN")
+#                     ^─ hover: App name · App ID · Bot
 ```
 
 ### Smart Completions
@@ -121,10 +124,9 @@ Or search **aiosend** in the Extensions panel.
 
 ```python
 # ✅ extension is happy
-import os
 from aiosend import CryptoPay
 
-cp = CryptoPay(token=os.environ['CRYPTOPAY_TOKEN'])
+cp = CryptoPay(token="YOUR_TOKEN")
 
 async def handle() -> None:
     invoice = await cp.create_invoice(
@@ -137,10 +139,9 @@ async def handle() -> None:
 
 ```python
 # ❌ triggers diagnostics
-cp = CryptoPay("real_token_here")           # hardcoded token
 invoice = cp.create_invoice(amount=100)     # missing await
-def handler():                              # not async, no return type
-    ...
+invoice = await cp.create_invoice()         # missing amount= and asset=
+await cp.transfer(user_id=1, asset="USDT", amount=10)  # missing spend_id=
 ```
 
 ---
