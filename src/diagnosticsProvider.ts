@@ -1,8 +1,6 @@
 import * as vscode from "vscode";
 
 export const DIAG_MISSING_AWAIT          = "aiosend.missing-await";
-export const DIAG_MISSING_ASYNC          = "aiosend.missing-async";
-export const DIAG_HARDCODED_TOKEN        = "aiosend.hardcoded-token";
 export const DIAG_INVALID_ASSET          = "aiosend.invalid-asset";
 export const DIAG_INVALID_FIAT           = "aiosend.invalid-fiat";
 export const DIAG_MISSING_RETURN         = "aiosend.missing-return";
@@ -30,8 +28,6 @@ const ASYNC_METHODS = new Set([
 ]);
 
 const INSTANCE_RE    = /(\w+)\s*=\s*CryptoPay\s*\(/;
-const TOKEN_STRING_RE = /CryptoPay\s*\(\s*["']([^"']{8,})["']/;
-const TOKEN_KWARG_RE  = /CryptoPay\s*\(.*?token\s*=\s*["']([^"']{8,})["']/;
 const ASSET_RE        = /\basset\s*=\s*["']([A-Z]+)["']/g;
 const FIAT_RE         = /\bfiat\s*=\s*["']([A-Z]+)["']/g;
 const STATUS_RE       = /\bstatus\s*=\s*["']([^"']+)["']/g;
@@ -82,15 +78,6 @@ function buildCallRE(names: Set<string>): RegExp {
     );
 }
 
-function isPlaceholderToken(token: string): boolean {
-    const placeholders = [
-        "your", "token", "api", "key", "secret", "test", "example",
-        "placeholder", "replace", "insert", "here", "xxx",
-    ];
-    const lower = token.toLowerCase();
-    return placeholders.some((p) => lower.includes(p));
-}
-
 export class AiosendDiagnosticsProvider {
     private collection: vscode.DiagnosticCollection;
 
@@ -123,28 +110,6 @@ export class AiosendDiagnosticsProvider {
         }
 
         const diagnostics: vscode.Diagnostic[] = [];
-
-        // ─── Hardcoded token ───────────────────────────────────────────────
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-
-            for (const re of [TOKEN_STRING_RE, TOKEN_KWARG_RE]) {
-                const m = re.exec(line);
-                if (m && !isPlaceholderToken(m[1])) {
-                    const tokenStart = line.indexOf(m[1]);
-                    const range = new vscode.Range(i, tokenStart, i, tokenStart + m[1].length);
-                    const d = new vscode.Diagnostic(
-                        range,
-                        "Hardcoded API token detected. Use os.environ.get('CRYPTOPAY_TOKEN') instead.",
-                        vscode.DiagnosticSeverity.Warning
-                    );
-                    d.code = DIAG_HARDCODED_TOKEN;
-                    d.source = "aiosend";
-                    diagnostics.push(d);
-                    break;
-                }
-            }
-        }
 
         if (instances.size === 0) {
             return diagnostics;
@@ -317,18 +282,6 @@ export class AiosendDiagnosticsProvider {
                     continue;
                 }
                 const defLine = document.lineAt(j);
-
-                if (!sig[1]) {
-                    const range = new vscode.Range(j, defLine.firstNonWhitespaceCharacterIndex, j, defLine.text.length);
-                    const d = new vscode.Diagnostic(
-                        range,
-                        "Function uses aiosend await calls — must be `async def`.",
-                        vscode.DiagnosticSeverity.Error
-                    );
-                    d.code = DIAG_MISSING_ASYNC;
-                    d.source = "aiosend";
-                    diagnostics.push(d);
-                }
 
                 if (!sig[3]) {
                     const range = new vscode.Range(j, defLine.firstNonWhitespaceCharacterIndex, j, defLine.text.length);
