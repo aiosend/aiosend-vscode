@@ -1,3 +1,4 @@
+import * as https from "https";
 import * as vscode from "vscode";
 import { isAiosendFile } from "./extension";
 
@@ -71,10 +72,10 @@ const DOCS: Record<string, MethodDoc> = {
     create_check: {
         description: "Create a crypto check — a one-time redeemable link sent via Telegram.",
         params: [
-            { name: "asset",            type: "Asset | str", required: true,  desc: "Crypto asset: USDT, TON, BTC, ETH, LTC, BNB, TRX, USDC" },
-            { name: "amount",           type: "float | Decimal", required: true, desc: "Check amount" },
-            { name: "pin_to_user_id",   type: "int",         required: false, desc: "Restrict activation to this Telegram user ID" },
-            { name: "pin_to_username",  type: "str",         required: false, desc: "Restrict activation to this Telegram username" },
+            { name: "asset",            type: "Asset | str",     required: true,  desc: "Crypto asset: USDT, TON, BTC, ETH, LTC, BNB, TRX, USDC" },
+            { name: "amount",           type: "float | Decimal", required: true,  desc: "Check amount" },
+            { name: "pin_to_user_id",   type: "int",             required: false, desc: "Restrict activation to this Telegram user ID" },
+            { name: "pin_to_username",  type: "str",             required: false, desc: "Restrict activation to this Telegram username" },
         ],
         returns: "Check",
         example: 'check = await cp.create_check(asset="TON", amount=5)\nprint(check.bot_check_url)',
@@ -186,6 +187,58 @@ const DOCS: Record<string, MethodDoc> = {
 
 const CALL_RE = /\b(\w+)\.(get_me|create_invoice|delete_invoice|get_invoices|get_invoice|create_check|delete_check|get_checks|get_check|transfer|get_transfers|get_transfer|get_balance|get_balance_by_asset|get_exchange_rates|exchange|get_currencies|get_stats)\s*\(/;
 
+const TOKEN_RE = /CryptoPay\s*\(\s*["']([^"']+)["']|token\s*=\s*["']([^"']+)["']/;
+
+interface AppInfo {
+    name: string;
+    appId: number;
+    bot: string;
+}
+
+const appInfoCache = new Map<string, AppInfo | null>();
+
+function fetchAppInfo(token: string): Promise<AppInfo | null> {
+    if (appInfoCache.has(token)) {
+        return Promise.resolve(appInfoCache.get(token)!);
+    }
+
+    const tryHost = (hostname: string): Promise<AppInfo | null> =>
+        new Promise((resolve) => {
+            const req = https.get(
+                { hostname, path: "/api/getMe", headers: { "Crypto-Pay-API-Token": token } },
+                (res) => {
+                    let data = "";
+                    res.on("data", (c: string) => { data += c; });
+                    res.on("end", () => {
+                        try {
+                            const json = JSON.parse(data);
+                            if (json.ok && json.result?.name) {
+                                resolve({
+                                    name:  json.result.name,
+                                    appId: json.result.app_id,
+                                    bot:   json.result.payment_processing_bot_username,
+                                });
+                            } else {
+                                resolve(null);
+                            }
+                        } catch {
+                            resolve(null);
+                        }
+                    });
+                }
+            );
+            req.on("error", () => resolve(null));
+            req.setTimeout(3000, () => { req.destroy(); resolve(null); });
+        });
+
+    return tryHost("pay.crypt.bot").then((info) =>
+        info !== null ? info : tryHost("testnet-pay.crypt.bot")
+    ).then((info) => {
+        appInfoCache.set(token, info);
+        return info;
+    });
+}
+
 function buildParamTable(params: ParamDoc[]): string {
     if (params.length === 0) {
         return "*No parameters.*";
@@ -197,10 +250,10 @@ function buildParamTable(params: ParamDoc[]): string {
 }
 
 export class AiosendHoverProvider implements vscode.HoverProvider {
-    provideHover(
+    async provideHover(
         document: vscode.TextDocument,
         position: vscode.Position
-    ): vscode.Hover | null {
+    ): Promise<vscode.Hover | null> {
         if (document.languageId !== "python") {
             return null;
         }
@@ -209,6 +262,34 @@ export class AiosendHoverProvider implements vscode.HoverProvider {
         }
 
         const line = document.lineAt(position.line).text;
+
+        // ─── Token hover ────────────────────────────────────────────────────
+        const tm = TOKEN_RE.exec(line);
+        if (tm) {
+            const token = tm[1] ?? tm[2];
+            const quote = line.includes(`"${token}"`) ? '"' : "'";
+            const tokenStart = line.indexOf(`${quote}${token}${quote}`) + 1;
+            const tokenEnd   = tokenStart + token.length;
+
+            if (position.character >= tokenStart && position.character <= tokenEnd) {
+                const info = await fetchAppInfo(token);
+                const md = new vscode.MarkdownString();
+                md.isTrusted = true;
+                if (info) {
+                    md.appendMarkdown(`**Crypto Pay App**\n\n`);
+                    md.appendMarkdown(`| | |\n|:--|:--|\n`);
+                    md.appendMarkdown(`| Name | \`${info.name}\` |\n`);
+                    md.appendMarkdown(`| App ID | \`${info.appId}\` |\n`);
+                    md.appendMarkdown(`| Bot | \`@${info.bot}\` |`);
+                } else {
+                    md.appendMarkdown(`**Crypto Pay Token**\n\n`);
+                    md.appendMarkdown(`⚠️ Could not verify token — invalid or no connection.`);
+                }
+                return new vscode.Hover(md);
+            }
+        }
+
+        // ─── Method hover ────────────────────────────────────────────────────
         const m = CALL_RE.exec(line);
         if (!m) {
             return null;
