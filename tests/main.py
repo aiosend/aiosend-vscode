@@ -2,7 +2,7 @@ import asyncio
 
 from aiosend import CryptoPay
 
-cp = CryptoPay(token="...")
+cp = CryptoPay(token="ююю")
 
 async def main() -> int:
     invoice =  await cp.create_invoice(amount=5, asset="BTC")

@@ -193,16 +193,19 @@ interface AppInfo {
     name: string;
     appId: number;
     bot: string;
+    isTestnet: boolean;
+    transferEnabled: boolean;
+    checkEnabled: boolean;
 }
 
 const appInfoCache = new Map<string, AppInfo | null>();
 
-function fetchAppInfo(token: string): Promise<AppInfo | null> {
+async function fetchAppInfo(token: string): Promise<AppInfo | null> {
     if (appInfoCache.has(token)) {
-        return Promise.resolve(appInfoCache.get(token)!);
+        return appInfoCache.get(token)!;
     }
 
-    const tryHost = (hostname: string): Promise<AppInfo | null> =>
+    const getMe = (hostname: string): Promise<{ raw: Record<string, unknown>; hostname: string } | null> =>
         new Promise((resolve) => {
             const req = https.get(
                 { hostname, path: "/api/getMe", headers: { "Crypto-Pay-API-Token": token } },
@@ -213,11 +216,7 @@ function fetchAppInfo(token: string): Promise<AppInfo | null> {
                         try {
                             const json = JSON.parse(data);
                             if (json.ok && json.result?.name) {
-                                resolve({
-                                    name:  json.result.name,
-                                    appId: json.result.app_id,
-                                    bot:   json.result.payment_processing_bot_username,
-                                });
+                                resolve({ raw: json.result as Record<string, unknown>, hostname });
                             } else {
                                 resolve(null);
                             }
@@ -231,12 +230,63 @@ function fetchAppInfo(token: string): Promise<AppInfo | null> {
             req.setTimeout(3000, () => { req.destroy(); resolve(null); });
         });
 
-    return tryHost("pay.crypt.bot").then((info) =>
-        info !== null ? info : tryHost("testnet-pay.crypt.bot")
-    ).then((info) => {
-        appInfoCache.set(token, info);
-        return info;
-    });
+    const probe = (hostname: string, path: string, body: string): Promise<boolean> =>
+        new Promise((resolve) => {
+            const buf = Buffer.from(body);
+            const req = https.request(
+                {
+                    hostname,
+                    path,
+                    method: "POST",
+                    headers: {
+                        "Crypto-Pay-API-Token": token,
+                        "Content-Type": "application/json",
+                        "Content-Length": buf.length,
+                    },
+                },
+                (res) => {
+                    let data = "";
+                    res.on("data", (c: string) => { data += c; });
+                    res.on("end", () => {
+                        try {
+                            const json = JSON.parse(data);
+                            resolve(!(json.ok === false && (json.error as Record<string, unknown>)?.name === "METHOD_DISABLED"));
+                        } catch {
+                            resolve(true);
+                        }
+                    });
+                }
+            );
+            req.on("error", () => resolve(true));
+            req.setTimeout(3000, () => { req.destroy(); resolve(true); });
+            req.write(buf);
+            req.end();
+        });
+
+    const result = await getMe("pay.crypt.bot") ?? await getMe("testnet-pay.crypt.bot");
+    if (!result) {
+        appInfoCache.set(token, null);
+        return null;
+    }
+
+    const { raw, hostname } = result;
+
+    const [transferEnabled, checkEnabled] = await Promise.all([
+        probe(hostname, "/api/transfer", JSON.stringify({ user_id: 0, asset: "USDT", amount: 0.0001, spend_id: "vscode-probe" })),
+        probe(hostname, "/api/createCheck", JSON.stringify({ asset: "USDT", amount: 0.0001 })),
+    ]);
+
+    const info: AppInfo = {
+        name:            raw.name as string,
+        appId:           raw.app_id as number,
+        bot:             raw.payment_processing_bot_username as string,
+        isTestnet:       raw.payment_processing_bot_username === "CryptoTestnetBot",
+        transferEnabled,
+        checkEnabled,
+    };
+
+    appInfoCache.set(token, info);
+    return info;
 }
 
 function buildParamTable(params: ParamDoc[]): string {
@@ -276,11 +326,14 @@ export class AiosendHoverProvider implements vscode.HoverProvider {
                 const md = new vscode.MarkdownString();
                 md.isTrusted = true;
                 if (info) {
-                    md.appendMarkdown(`**Crypto Pay App**\n\n`);
+                    const net = info.isTestnet ? " `testnet`" : "";
+                    md.appendMarkdown(`**Crypto Pay App**${net}\n\n`);
                     md.appendMarkdown(`| | |\n|:--|:--|\n`);
                     md.appendMarkdown(`| Name | \`${info.name}\` |\n`);
                     md.appendMarkdown(`| App ID | \`${info.appId}\` |\n`);
-                    md.appendMarkdown(`| Bot | \`@${info.bot}\` |`);
+                    md.appendMarkdown(`| Bot | \`@${info.bot}\` |\n`);
+                    md.appendMarkdown(`| transfer() | ${info.transferEnabled ? "✅ enabled" : "❌ disabled"} |\n`);
+                    md.appendMarkdown(`| create_check() | ${info.checkEnabled ? "✅ enabled" : "❌ disabled"} |`);
                 } else {
                     md.appendMarkdown(`**Crypto Pay Token**\n\n`);
                     md.appendMarkdown(`⚠️ Could not verify token — invalid or no connection.`);
