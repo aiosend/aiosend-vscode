@@ -69,12 +69,22 @@ invoice = await cp.create_invoice(amount=100, asset="USDT")
 #                  ^─ hover here
 ```
 
-Hover over the token in `CryptoPay(token="...")` to instantly verify it — the extension calls the Crypto Pay API and shows the app name, ID, and bot username.
+Hover over the token in `CryptoPay(token="...")` to instantly verify it — the extension calls the Crypto Pay API and shows the app name, ID, bot username, network (mainnet/testnet), and whether `transfer()` and `create_check()` are enabled in the app's security settings.
 
 ```python
 cp = CryptoPay(token="YOUR_TOKEN")
-#                     ^─ hover: App name · App ID · Bot
+#                     ^─ hover: App name · App ID · Bot · Method availability
 ```
+
+| Field | Example |
+|:--|:--|
+| Name | `MyShop` |
+| App ID | `1234` |
+| Bot | `@CryptoBot` |
+| transfer() | ✅ enabled / ❌ disabled |
+| create_check() | ✅ enabled / ❌ disabled |
+
+Testnet tokens are detected automatically and labeled `` `testnet` ``.
 
 ### Smart Completions
 

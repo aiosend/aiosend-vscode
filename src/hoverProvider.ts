@@ -198,95 +198,111 @@ interface AppInfo {
     checkEnabled: boolean;
 }
 
-const appInfoCache = new Map<string, AppInfo | null>();
+const CACHE_TTL = 60_000;
+const appInfoCache = new Map<string, { info: AppInfo | null; ts: number }>();
+const probeLog = vscode.window.createOutputChannel("aiosend probe");
+
+function httpGet(hostname: string, path: string, token: string): Promise<string | null> {
+    return new Promise((resolve) => {
+        const req = https.get(
+            { hostname, path, headers: { "Crypto-Pay-API-Token": token } },
+            (res) => {
+                let data = "";
+                res.setEncoding("utf8");
+                res.on("data", (c: string) => { data += c; });
+                res.on("end", () => resolve(data));
+            }
+        );
+        req.on("error", () => resolve(null));
+        req.setTimeout(3000, () => { req.destroy(); resolve(null); });
+    });
+}
+
+function httpPost(hostname: string, path: string, token: string, body: string): Promise<string | null> {
+    return new Promise((resolve) => {
+        const buf = Buffer.from(body);
+        const req = https.request(
+            {
+                hostname,
+                path,
+                method: "POST",
+                headers: {
+                    "Crypto-Pay-API-Token": token,
+                    "Content-Type": "application/json",
+                    "Content-Length": buf.length,
+                },
+            },
+            (res) => {
+                let data = "";
+                res.setEncoding("utf8");
+                res.on("data", (c: string) => { data += c; });
+                res.on("end", () => resolve(data));
+            }
+        );
+        req.on("error", () => resolve(null));
+        req.setTimeout(3000, () => { req.destroy(); resolve(null); });
+        req.write(buf);
+        req.end();
+    });
+}
 
 async function fetchAppInfo(token: string): Promise<AppInfo | null> {
-    if (appInfoCache.has(token)) {
-        return appInfoCache.get(token)!;
+    const cached = appInfoCache.get(token);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+        return cached.info;
     }
 
-    const getMe = (hostname: string): Promise<{ raw: Record<string, unknown>; hostname: string } | null> =>
-        new Promise((resolve) => {
-            const req = https.get(
-                { hostname, path: "/api/getMe", headers: { "Crypto-Pay-API-Token": token } },
-                (res) => {
-                    let data = "";
-                    res.on("data", (c: string) => { data += c; });
-                    res.on("end", () => {
-                        try {
-                            const json = JSON.parse(data);
-                            if (json.ok && json.result?.name) {
-                                resolve({ raw: json.result as Record<string, unknown>, hostname });
-                            } else {
-                                resolve(null);
-                            }
-                        } catch {
-                            resolve(null);
-                        }
-                    });
-                }
-            );
-            req.on("error", () => resolve(null));
-            req.setTimeout(3000, () => { req.destroy(); resolve(null); });
-        });
+    try {
+        const tryGetMe = async (hostname: string) => {
+            const raw = await httpGet(hostname, "/api/getMe", token);
+            if (!raw) { return null; }
+            const json = JSON.parse(raw);
+            if (json.ok && json.result?.name) {
+                return { result: json.result as Record<string, unknown>, hostname };
+            }
+            return null;
+        };
 
-    const probe = (hostname: string, path: string, body: string): Promise<boolean> =>
-        new Promise((resolve) => {
-            const buf = Buffer.from(body);
-            const req = https.request(
-                {
-                    hostname,
-                    path,
-                    method: "POST",
-                    headers: {
-                        "Crypto-Pay-API-Token": token,
-                        "Content-Type": "application/json",
-                        "Content-Length": buf.length,
-                    },
-                },
-                (res) => {
-                    let data = "";
-                    res.on("data", (c: string) => { data += c; });
-                    res.on("end", () => {
-                        try {
-                            const json = JSON.parse(data);
-                            resolve(!(json.ok === false && (json.error as Record<string, unknown>)?.name === "METHOD_DISABLED"));
-                        } catch {
-                            resolve(true);
-                        }
-                    });
-                }
-            );
-            req.on("error", () => resolve(true));
-            req.setTimeout(3000, () => { req.destroy(); resolve(true); });
-            req.write(buf);
-            req.end();
-        });
+        const got = await tryGetMe("pay.crypt.bot") ?? await tryGetMe("testnet-pay.crypt.bot");
+        if (!got) {
+            appInfoCache.set(token, { info: null, ts: Date.now() });
+            return null;
+        }
 
-    const result = await getMe("pay.crypt.bot") ?? await getMe("testnet-pay.crypt.bot");
-    if (!result) {
-        appInfoCache.set(token, null);
+        const { result, hostname } = got;
+
+        const [transferRaw, checkRaw] = await Promise.all([
+            httpPost(hostname, "/api/transfer",    token, JSON.stringify({ user_id: 0, asset: "USDT", amount: 0.0001, spend_id: "vscode-probe" })),
+            httpPost(hostname, "/api/createCheck", token, JSON.stringify({ asset: "USDT", amount: 0.0001 })),
+        ]);
+
+        probeLog.appendLine(`[transfer]    ${transferRaw}`);
+        probeLog.appendLine(`[createCheck] ${checkRaw}`);
+
+        const isDisabled = (raw: string | null) => {
+            if (!raw) { return false; }
+            try {
+                const j = JSON.parse(raw);
+                const name: string = j.error?.name ?? "";
+                return j.ok === false && (name === "METHOD_BLOCKED" || name === "METHOD_DISABLED");
+            } catch { return false; }
+        };
+
+        const info: AppInfo = {
+            name:            result.name as string,
+            appId:           result.app_id as number,
+            bot:             result.payment_processing_bot_username as string,
+            isTestnet:       result.payment_processing_bot_username === "CryptoTestnetBot",
+            transferEnabled: !isDisabled(transferRaw),
+            checkEnabled:    !isDisabled(checkRaw),
+        };
+
+        appInfoCache.set(token, { info, ts: Date.now() });
+        return info;
+    } catch {
+        appInfoCache.set(token, { info: null, ts: Date.now() });
         return null;
     }
-
-    const { raw, hostname } = result;
-
-    const [transferEnabled, checkEnabled] = await Promise.all([
-        probe(hostname, "/api/transfer", JSON.stringify({ user_id: 0, asset: "USDT", amount: 0.0001, spend_id: "vscode-probe" })),
-        probe(hostname, "/api/createCheck", JSON.stringify({ asset: "USDT", amount: 0.0001 })),
-    ]);
-
-    const info: AppInfo = {
-        name:            raw.name as string,
-        appId:           raw.app_id as number,
-        bot:             raw.payment_processing_bot_username as string,
-        isTestnet:       raw.payment_processing_bot_username === "CryptoTestnetBot",
-        transferEnabled,
-        checkEnabled,
-    };
-
-    appInfoCache.set(token, info);
-    return info;
 }
 
 function buildParamTable(params: ParamDoc[]): string {
